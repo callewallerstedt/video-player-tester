@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Video Player Tester</title>
+  <meta name="description" content="Scan a QR code, paste a YouTube link, and compare ways to show it without a video element.">
+  <meta name="theme-color" content="#0c0b09">
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,650&family=IBM+Plex+Mono:wght@400;500&family=Outfit:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/styles.css">
+  <script>
+    document.documentElement.dataset.role =
+      new URLSearchParams(location.search).get("role") === "remote" ? "remote" : "display";
+  </script>
+</head>
+<body>
+  <noscript>
+    <p class="noscript">Turn on JavaScript. The comparison grid and the QR code are built in the browser.</p>
+  </noscript>
+
+  <main class="remote" id="remote">
+    <div class="remote-sheet">
+      <p class="eyebrow">Companion remote</p>
+      <h1>Paste a YouTube link</h1>
+      <p class="lede">This phone only sends the link. The other screen is the comparison grid, and it updates when this goes through.</p>
+      <form id="remote-form">
+        <label for="remote-url">YouTube link</label>
+        <input id="remote-url" name="url" type="text" inputmode="url" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="https://www.youtube.com/watch?v=…" required>
+        <div class="form-actions">
+          <button class="btn" type="button" id="remote-paste">Paste</button>
+          <button class="btn primary" type="submit" id="remote-send">Send to the screen</button>
+        </div>
+        <p class="form-msg" id="remote-msg" role="status"></p>
+      </form>
+      <p class="fine">Session <code id="remote-room"></code></p>
+    </div>
+  </main>
+
+  <div class="desk" id="desk">
+    <a class="skip" href="#grid">Skip to the comparison grid</a>
+    <header class="topbar">
+      <div class="brand">
+        <span class="mark" aria-hidden="true"></span>
+        <span>
+          <strong>Video Player Tester</strong>
+          <small>Method bench</small>
+        </span>
+      </div>
+      <p class="badge">No &lt;video&gt; · No getUserMedia</p>
+      <p class="live" id="live-status">Waiting for a link</p>
+    </header>
+
+    <div class="layout">
+      <aside class="lobby">
+        <section class="panel">
+          <p class="eyebrow">Pairing panel</p>
+          <h2>Scan with your phone</h2>
+          <p class="panel-copy">The code opens a companion remote. Paste a YouTube link there and this grid takes it.</p>
+          <div class="qr-frame">
+            <img id="qr" width="220" height="220" alt="QR code that opens the companion remote">
+          </div>
+          <p class="session">Session <code id="room-code"></code></p>
+          <div class="form-actions">
+            <button class="btn" type="button" id="copy-link">Copy remote link</button>
+            <button class="btn" type="button" id="new-session">New session</button>
+          </div>
+          <p class="open-remote"><a id="remote-anchor" href="" target="_blank" rel="noreferrer">Open remote in a new tab</a></p>
+          <p class="relay" id="relay-status">Relay idle</p>
+        </section>
+
+        <section class="panel">
+          <p class="eyebrow">Direct paste</p>
+          <h2>Or paste it on this screen</h2>
+          <form id="desk-form">
+            <label class="sr" for="desk-url">YouTube link</label>
+            <input id="desk-url" type="text" inputmode="url" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="https://youtu.be/…">
+            <button class="btn primary" type="submit">Show on the bench</button>
+            <p class="form-msg" id="desk-msg" role="status"></p>
+          </form>
+        </section>
+      </aside>
+
+      <main class="bench">
+        <div class="bench-head">
+          <img id="now-thumb" alt="" hidden>
+          <div>
+            <p class="eyebrow">Comparison grid</p>
+            <h2 id="bench-title">Waiting for a video</h2>
+            <p id="bench-sub">Each card is one way to frame the same YouTube embed. A player lazy-mounts when its card intersects the screen.</p>
+          </div>
+        </div>
+        <div class="toolbar">
+          <div class="chips" id="chips" role="group" aria-label="Method categories"></div>
+          <div class="toolbar-end">
+            <label class="sr" for="filter-text">Filter methods</label>
+            <input id="filter-text" type="search" placeholder="Filter by name or technique">
+            <button class="btn" type="button" id="mount-all" disabled>Mount all</button>
+            <button class="btn" type="button" id="clear-video" disabled>Clear</button>
+          </div>
+        </div>
+        <p class="count" id="count"></p>
+        <div class="grid" id="grid"></div>
+        <footer class="footnote">
+          <p>Canvas, WebGL, and WebCodecs are not in the grid. They need frames from a video element or a camera, and both are ruled out. YouTube’s own document, inside the frame, still contains their player. This page only changes the element, the embed parameters, the crop, the CSS, or the IFrame Player API.</p>
+          <p>An ad blocker can blank every YouTube frame. That is the blocker, not the method. The phone link crosses a public ntfy.sh relay tied to this session code.</p>
+        </footer>
+      </main>
+    </div>
+  </div>
+
+  <script src="js/qrcode.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
