@@ -1,9 +1,9 @@
 (function (root) {
-  const PIPED_APIS = [
-    "https://api.piped.private.coffee",
-    "https://pipedapi.kavin.rocks",
-    "https://pipedapi.adminforge.de",
-    "https://pipedapi.ducks.party",
+  const SOURCES = [
+    { kind: "invidious", base: "https://invidious.f5.si" },
+    { kind: "piped", base: "https://api.piped.private.coffee" },
+    { kind: "piped", base: "https://pipedapi.kavin.rocks" },
+    { kind: "piped", base: "https://pipedapi.adminforge.de" },
   ];
 
   const streamCache = new Map();
@@ -22,45 +22,92 @@
     return mp4boxPromise;
   }
 
+  function cancelled(ctx) {
+    return ctx.gate && ctx.gate.on === false;
+  }
+
   async function fetchStreams(videoId) {
     if (streamCache.has(videoId)) return streamCache.get(videoId);
     const errors = [];
-    for (const base of PIPED_APIS) {
+    const found = await Promise.all(SOURCES.map(async (source) => {
+      const path = source.kind === "piped"
+        ? source.base + "/streams/" + encodeURIComponent(videoId)
+        : source.base + "/api/v1/videos/" + encodeURIComponent(videoId);
       try {
-        const response = await fetch(base + "/streams/" + encodeURIComponent(videoId), {
+        const response = await fetch(path, {
           headers: { Accept: "application/json" },
+          signal: AbortSignal.timeout(6000),
         });
         if (!response.ok) {
-          errors.push(base + " → " + response.status);
-          continue;
+          errors.push(source.base + " → " + response.status);
+          return null;
         }
         const data = await response.json();
-        const normalized = normalizeStreams(data, base);
-        if (!normalized.audioUrl && !normalized.progressiveUrl) {
-          errors.push(base + " → no playable streams");
-          continue;
+        const normalized = source.kind === "piped" ? normalizePiped(data) : normalizeInvidious(data);
+        if (!normalized.audioUrl && !normalized.progressiveUrl && !normalized.videoOnlyUrl && !normalized.preview) {
+          errors.push(source.base + " → empty");
+          return null;
         }
-        streamCache.set(videoId, normalized);
+        normalized.kind = source.kind;
         return normalized;
       } catch (error) {
-        errors.push(base + " → " + (error && error.message ? error.message : "failed"));
+        errors.push(source.base + " → " + (error && error.message ? error.message : "failed"));
+        return null;
       }
+    }));
+    const usable = found.filter(Boolean);
+    if (!usable.length) throw new Error("No stream metadata. " + errors.join("; "));
+    const piped = usable.find((item) => item.kind === "piped" && (item.progressiveUrl || item.audioUrl));
+    const invidious = usable.find((item) => item.kind === "invidious");
+    const merged = Object.assign({}, invidious || {}, piped || usable[0]);
+    if (invidious && invidious.preview) merged.preview = invidious.preview;
+    if (piped) {
+      merged.progressiveUrl = piped.progressiveUrl || merged.progressiveUrl;
+      merged.audioUrl = piped.audioUrl || merged.audioUrl;
+      merged.videoOnlyUrl = piped.videoOnlyUrl || merged.videoOnlyUrl;
+      if (piped.preview) merged.preview = piped.preview;
     }
-    throw new Error("No stream metadata. Tried: " + errors.join("; "));
+    streamCache.set(videoId, merged);
+    return merged;
   }
 
-  function normalizeStreams(data) {
-    const progressive = (data.videoStreams || [])
-      .filter((stream) => !stream.videoOnly && /mp4/i.test(stream.mimeType || stream.format || ""))
-      .sort((a, b) => qualityRank(b.quality) - qualityRank(a.quality))[0];
+  function normalizeInvidious(data) {
+    const adaptive = data.adaptiveFormats || [];
+    const audio = adaptive
+      .filter((item) => /^audio/i.test(item.type || ""))
+      .sort((a, b) => (b.bitrate || 0) - (a.bitrate || 0))[0];
+    const video = closestTo360(
+      adaptive.filter((item) => /video\/mp4/i.test(item.type || "")),
+      "qualityLabel"
+    );
+    const progressive = closestTo360(
+      (data.formatStreams || []).filter((item) => /mp4/i.test(item.container || "")),
+      "qualityLabel"
+    );
+    return {
+      title: data.title || "",
+      duration: Number(data.lengthSeconds) || 0,
+      progressiveUrl: progressive && progressive.url,
+      audioUrl: (audio && audio.url) || (progressive && progressive.url) || "",
+      videoOnlyUrl: video && video.url,
+      preview: pickPreview(data.storyboards || []),
+    };
+  }
+
+  function normalizePiped(data) {
+    const progressive = closestTo360(
+      (data.videoStreams || []).filter((stream) => !stream.videoOnly && /mp4/i.test(stream.mimeType || stream.format || "")),
+      "quality"
+    );
 
     const audioOnly = (data.audioStreams || [])
       .slice()
       .sort((a, b) => (b.bitrate || 0) - (a.bitrate || 0))[0];
 
-    const videoOnly = (data.videoStreams || [])
-      .filter((stream) => stream.videoOnly && /mp4/i.test(stream.mimeType || ""))
-      .sort((a, b) => qualityRank(b.quality) - qualityRank(a.quality))[0];
+    const videoOnly = closestTo360(
+      (data.videoStreams || []).filter((stream) => stream.videoOnly && /mp4/i.test(stream.mimeType || "")),
+      "quality"
+    );
 
     const preview = pickPreview(data.previewFrames || data.storyboards || []);
 
@@ -80,10 +127,19 @@
     return match ? Number(match[1]) : 0;
   }
 
+  function closestTo360(list, key) {
+    if (!list.length) return null;
+    return list.slice().sort((a, b) => Math.abs(qualityRank(a[key]) - 360) - Math.abs(qualityRank(b[key]) - 360))[0];
+  }
+
   function pickPreview(list) {
     const normalized = list.map(normalizePreview).filter(Boolean);
     if (!normalized.length) return null;
-    normalized.sort((a, b) => (b.frameWidth * b.frameHeight) - (a.frameWidth * a.frameHeight));
+    normalized.sort((a, b) => {
+      const interval = a.durationPerFrame - b.durationPerFrame;
+      if (Math.abs(interval) > 400) return interval;
+      return (b.frameWidth * b.frameHeight) - (a.frameWidth * a.frameHeight);
+    });
     return normalized[0];
   }
 
@@ -125,7 +181,6 @@
   function loadImage(url) {
     return new Promise((resolve, reject) => {
       const image = new Image();
-      image.crossOrigin = "anonymous";
       image.onload = () => resolve(image);
       image.onerror = () => reject(new Error("Storyboard sheet failed to load."));
       image.src = url;
@@ -179,10 +234,16 @@
     const audio = document.createElement("audio");
     audio.preload = "auto";
     audio.playsInline = true;
-    audio.crossOrigin = "anonymous";
+    audio.volume = 1;
+    audio.muted = false;
     audio.src = url;
-    audio.setAttribute("controlslist", "nodownload");
     return audio;
+  }
+
+  function crank(audio) {
+    if (!audio) return;
+    audio.muted = false;
+    audio.volume = 1;
   }
 
   function mountStoryboardPlayer(ctx, mode) {
@@ -192,12 +253,13 @@
     ctx.extras.append(status);
 
     return fetchStreams(ctx.videoId).then(async (streams) => {
+      if (cancelled(ctx)) return;
       if (!streams.preview) {
-        throw new Error("No storyboard for this video. Short clips often have none. Audio alone is not enough for this card.");
+        throw new Error("No storyboard for this video.");
       }
       if (!streams.audioUrl) throw new Error("No audio stream was returned for this video.");
 
-      const sheets = await loadPreviewSheets(streams.preview);
+      const sheets = new Map();
       const audio = attachAudio(streams.audioUrl);
       audio.hidden = true;
       const stop = { dead: false };
@@ -205,10 +267,12 @@
 
       let surface;
       if (mode === "img") {
+        const clip = document.createElement("div");
+        clip.className = "sprite-clip";
         surface = document.createElement("img");
-        surface.className = "alt-surface";
-        surface.alt = "Storyboard frame stream";
-        ctx.stage.append(surface);
+        surface.alt = "";
+        clip.append(surface);
+        ctx.stage.append(clip);
       } else {
         surface = document.createElement("canvas");
         surface.className = "alt-surface";
@@ -218,39 +282,51 @@
       }
       ctx.stage.append(audio);
 
-      const scratch = document.createElement("canvas");
-      scratch.width = streams.preview.frameWidth;
-      scratch.height = streams.preview.frameHeight;
-      const scratchCtx = scratch.getContext("2d", { alpha: false });
       const canvasCtx = mode === "canvas" ? surface.getContext("2d", { alpha: false }) : null;
+
+      const perPage = streams.preview.framesPerPageX * streams.preview.framesPerPageY;
+
+      function ensureSheet(page) {
+        if (sheets.has(page) || page < 0 || page >= streams.preview.urls.length) return;
+        sheets.set(page, null);
+        loadImage(streams.preview.urls[page]).then((image) => {
+          if (stop.dead) return;
+          sheets.set(page, image);
+          draw.index = -1;
+          sync();
+        }).catch(() => {});
+      }
 
       function paint(frameIndex) {
         const max = Math.max(0, (streams.preview.totalCount || 1) - 1);
         const safe = Math.max(0, Math.min(max, frameIndex));
-        if (safe === draw.index) return;
+        const page = Math.floor(safe / perPage);
+        const sheet = sheets.get(page);
+        ensureSheet(page);
+        ensureSheet(page + 1);
+        if (!sheet || safe === draw.index) return;
         draw.index = safe;
-        const source = frameSource(streams.preview, sheets, safe);
-        scratchCtx.drawImage(
-          source.sheet,
-          source.sx,
-          source.sy,
-          source.sw,
-          source.sh,
-          0,
-          0,
-          scratch.width,
-          scratch.height
-        );
+        const local = safe % perPage;
+        const col = local % streams.preview.framesPerPageX;
+        const row = Math.floor(local / streams.preview.framesPerPageX);
         if (mode === "canvas") {
-          canvasCtx.drawImage(scratch, 0, 0, surface.width, surface.height);
+          canvasCtx.drawImage(
+            sheet,
+            col * streams.preview.frameWidth,
+            row * streams.preview.frameHeight,
+            streams.preview.frameWidth,
+            streams.preview.frameHeight,
+            0,
+            0,
+            surface.width,
+            surface.height
+          );
         } else {
-          if (surface._blobUrl) URL.revokeObjectURL(surface._blobUrl);
-          scratch.toBlob((blob) => {
-            if (!blob || stop.dead) return;
-            const url = URL.createObjectURL(blob);
-            surface._blobUrl = url;
-            surface.src = url;
-          }, "image/jpeg", 0.85);
+          surface.src = streams.preview.urls[page];
+          surface.style.width = (streams.preview.framesPerPageX * 100) + "%";
+          surface.style.height = (streams.preview.framesPerPageY * 100) + "%";
+          surface.style.left = (-col * 100) + "%";
+          surface.style.top = (-row * 100) + "%";
         }
       }
 
@@ -262,8 +338,9 @@
       }
 
       paint(0);
+      const every = Math.round(streams.preview.durationPerFrame / 100) / 10;
       ctx.extras.append(createTransport(
-        () => { audio.play().then(sync).catch(() => { status.textContent = "Tap Play again. The browser blocked autoplay."; }); },
+        () => { crank(audio); audio.play().then(sync).catch(() => { status.textContent = "Press Play. Autoplay was blocked."; }); },
         () => audio.pause(),
         (delta) => {
           audio.currentTime = Math.max(0, (audio.currentTime || 0) + delta);
@@ -277,10 +354,10 @@
         status.textContent = "Audio element failed. This screen may also be blocking HTMLMediaElement audio.";
       });
 
-      status.textContent = mode === "img"
-        ? "Image-element frame stream + audio element. No <video>. Storyboard JPEGs, synced to the audio timeline."
-        : "Storyboard scrub on canvas + audio element. No <video>. Preview frames from YouTube’s storyboard, sound from the progressive/audio stream.";
+      status.textContent = (mode === "img" ? "Image sprite" : "Storyboard canvas")
+        + " + audio at 100%. One preview frame about every " + every + "s. No <video>.";
 
+      crank(audio);
       const playAttempt = audio.play();
       if (playAttempt) playAttempt.then(sync).catch(() => {
         status.textContent += " Press Play for sound.";
@@ -292,7 +369,6 @@
           audio.pause();
           audio.removeAttribute("src");
           audio.load();
-          if (surface._blobUrl) URL.revokeObjectURL(surface._blobUrl);
         },
       });
     });
@@ -395,17 +471,37 @@
         }
       };
 
-      status.textContent = "Downloading progressive MP4…";
-      const response = await fetch(url);
-      if (!response.ok) throw new Error("MP4 fetch failed (" + response.status + ").");
+      if (cancelled(ctx)) return;
+      status.textContent = "Downloading MP4…";
+      const download = new AbortController();
+      state.abort = () => download.abort();
+      ctx.bind({
+        destroy() {
+          state.dead = true;
+          try { download.abort(); } catch (error) { /* already aborted */ }
+        },
+      });
+      let response;
+      try {
+        response = await fetch(url, { signal: download.signal });
+      } catch (error) {
+        if (state.dead || (error && error.name === "AbortError")) return;
+        const message = "MP4 download was blocked (the stream host does not allow this page to fetch it). Try the next technique.";
+        status.textContent = message;
+        throw new Error(message);
+      }
+      if (!response.ok) {
+        const message = "MP4 fetch failed (" + response.status + ").";
+        status.textContent = message;
+        throw new Error(message);
+      }
       const buffer = await response.arrayBuffer();
+      if (cancelled(ctx) || state.dead) return;
       buffer.fileStart = 0;
-      const info = (() => {
-        file.appendBuffer(buffer);
-        file.flush();
-        return readyPromise;
-      })();
-      const meta = await info;
+      file.appendBuffer(buffer);
+      file.flush();
+      const meta = await readyPromise;
+      if (cancelled(ctx) || state.dead) return;
       file.start();
 
       let raf = 0;
@@ -437,7 +533,7 @@
       }
 
       ctx.extras.append(createTransport(
-        () => { if (audio) audio.play().catch(() => {}); },
+        () => { crank(audio); if (audio) audio.play().catch(() => {}); },
         () => { if (audio) audio.pause(); },
         (delta) => {
           if (!audio) return;
@@ -451,6 +547,7 @@
 
       paint();
       if (audio) {
+        crank(audio);
         audio.play().catch(() => {
           status.textContent += " Press Play for sound.";
         });
@@ -466,6 +563,7 @@
       ctx.bind({
         destroy() {
           state.dead = true;
+          try { if (state.abort) state.abort(); } catch (error) { /* already aborted */ }
           root.clearTimeout(watchdog);
           root.cancelAnimationFrame(raf);
           if (audio) {

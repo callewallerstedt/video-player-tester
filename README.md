@@ -1,13 +1,13 @@
 # Video Player Tester
 
-Comparison bench for showing one YouTube link in many ways, without a `<video>` element and without `getUserMedia`.
+Fullscreen stage for one YouTube link. Prev / Next and the left and right arrow keys cycle techniques, one at a time, ordered by how likely they are to get past a page that blocks `<video>`.
 
-Scan the QR code on the pairing panel. That opens a companion remote where you paste a YouTube link. The comparison grid on the original screen updates.
+Default video: `https://www.youtube.com/watch?v=RRxcfwAXVa8`
 
 https://callewallerstedt.github.io/video-player-tester/
 
-**Outside the player** cards try storyboard scrub (canvas), an `<img>` frame stream, and WebCodecs → canvas, with sound on an `<audio>` element. Stream metadata comes from public Piped instances.
+The first three techniques stay outside the YouTube player: WebCodecs onto a canvas, a storyboard scrub on canvas, and an image sprite, each with sound on an `<audio>` element at volume 100. The rest are embeds (IFrame Player API, iframe, object, embed, SVG) that unmute through the player API. Nothing on this page uses a `<video>` element or `getUserMedia`.
 
-The phone-to-screen message goes through a public [ntfy.sh](https://ntfy.sh) topic named after the session code. You can also paste the link directly on the bench.
+The phone pairing panel opens a companion remote. The link is sent through a public [ntfy.sh](https://ntfy.sh) topic named after the session code. You can also paste the link on the display.
 
 QR codes are drawn with Kazuhiko Arase’s MIT-licensed [qrcode-generator](http://www.d-project.com/).
