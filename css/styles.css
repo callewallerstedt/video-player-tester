@@ -445,12 +445,26 @@ code {
 .stage > object,
 .stage > embed,
 .stage > svg,
-.stage > .fill-host {
+.stage > .fill-host,
+.stage > .alt-surface {
   position: absolute;
   inset: 0;
   width: 100%;
   height: 100%;
   border: 0;
+}
+
+.stage > .alt-surface {
+  object-fit: contain;
+  background: #000;
+}
+
+.alt-status {
+  margin: 0;
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 0.75rem;
+  line-height: 1.4;
 }
 
 .stage > iframe.cover-media,

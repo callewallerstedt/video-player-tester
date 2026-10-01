@@ -21,9 +21,6 @@
 
   const METHODS = buildMethods();
 
-  if (isRemote) initRemote();
-  else initDesk();
-
   function createRoom() {
     const bytes = new Uint8Array(16);
     crypto.getRandomValues(bytes);
@@ -136,10 +133,33 @@
   function buildMethods() {
     const embedDoc = "Embed document";
     const paramsCat = "Player parameters";
-    const crop = "CSS crop";
-    const treatment = "CSS treatment";
+    const outside = "Outside the player";
 
     return [
+      {
+        id: "storyboard-scrub",
+        category: outside,
+        title: "Storyboard scrub + audio",
+        note: "YouTube’s storyboard sprite sheets painted on a canvas, timed to a real audio stream. No <video> and no YouTube iframe. Sound uses an <audio> element.",
+        technique: "canvas + storyboard + <audio>",
+        mount: (ctx) => window.AltPlayers.mountStoryboardCanvas(ctx),
+      },
+      {
+        id: "img-frame-stream",
+        category: outside,
+        title: "Image frame stream + audio",
+        note: "MJPEG-style playback through an <img> element. Each storyboard cell becomes a JPEG blob URL. Sound uses the same audio stream. No <video>.",
+        technique: "<img> JPEG blobs + <audio>",
+        mount: (ctx) => window.AltPlayers.mountStoryboardImg(ctx),
+      },
+      {
+        id: "webcodecs-canvas",
+        category: outside,
+        title: "WebCodecs → canvas + audio",
+        note: "Fetches a progressive MP4, demuxes it, and decodes frames with VideoDecoder onto a canvas. Sound rides an <audio> element from the same file. No <video>.",
+        technique: "VideoDecoder + canvas + <audio>",
+        mount: (ctx) => window.AltPlayers.mountWebCodecs(ctx),
+      },
       embedMethod({
         id: "standard-iframe",
         category: embedDoc,
@@ -432,198 +452,6 @@
         note: "playsinline=1 asks mobile browsers to play inside the page instead of forcing a system fullscreen.",
         technique: "playsinline=1",
         params: { playsinline: "1" },
-      }),
-      embedMethod({
-        id: "crop-4-3",
-        category: crop,
-        title: "4:3 cover crop",
-        note: "The stage is 4:3. The embed is sized with CSS cover, so the sides of the 16:9 picture are cropped.",
-        technique: "aspect-ratio: 4 / 3 + cover",
-        ratio: "4 / 3",
-      }),
-      embedMethod({
-        id: "crop-ultrawide",
-        category: crop,
-        title: "21:9 cover crop",
-        note: "An ultrawide stage. Cover crops the top and bottom of the 16:9 picture.",
-        technique: "aspect-ratio: 21 / 9 + cover",
-        ratio: "21 / 9",
-      }),
-      embedMethod({
-        id: "crop-vertical",
-        category: crop,
-        title: "9:16 cover crop",
-        note: "A vertical stage, the Shorts shape. Cover keeps the center and cuts both sides.",
-        technique: "aspect-ratio: 9 / 16 + cover",
-        ratio: "9 / 16",
-      }),
-      embedMethod({
-        id: "crop-square",
-        category: crop,
-        title: "Square cover crop",
-        note: "A 1:1 stage filled with cover. Compare it with the square contain card next door.",
-        technique: "aspect-ratio: 1 / 1 + cover",
-        ratio: "1 / 1",
-      }),
-      embedMethod({
-        id: "square-contain",
-        category: crop,
-        title: "Square contain",
-        note: "The whole 16:9 frame fits inside the square. The bars are the stage showing through. This is contain, not cover.",
-        technique: "aspect-ratio: 1 / 1 + contain",
-        ratio: "1 / 1",
-        frame: { className: "contain-media" },
-      }),
-      embedMethod({
-        id: "circle-clip",
-        category: crop,
-        title: "Circle clip",
-        note: "clip-path: circle() on a square stage. The player chrome is clipped with the picture.",
-        technique: "clip-path: circle(50%)",
-        ratio: "1 / 1",
-        clip: "circle(50% at 50% 50%)",
-      }),
-      embedMethod({
-        id: "diamond-clip",
-        category: crop,
-        title: "Diamond clip",
-        note: "A polygon clip-path. Again the controls are cut by the same shape.",
-        technique: "clip-path: polygon(diamond)",
-        ratio: "1 / 1",
-        clip: "polygon(50% 0%, 100% 50%, 50% 100%, 0% 50%)",
-      }),
-      embedMethod({
-        id: "arch-clip",
-        category: crop,
-        title: "Arch clip",
-        note: "A polygon clip-path shaped like a window arch. The bottom of the player stays easier to reach.",
-        technique: "clip-path: polygon(arch)",
-        clip: "polygon(0% 100%, 0% 42%, 7% 24%, 18% 12%, 32% 4%, 50% 0%, 68% 4%, 82% 12%, 93% 24%, 100% 42%, 100% 100%)",
-      }),
-      embedMethod({
-        id: "grayscale",
-        category: treatment,
-        title: "Grayscale filter",
-        note: "CSS filter: grayscale(1) on the iframe element. The filter applies to the whole composited frame.",
-        technique: "filter: grayscale(1)",
-        frame: { className: "cover-media fx-gray" },
-      }),
-      embedMethod({
-        id: "sepia",
-        category: treatment,
-        title: "Sepia filter",
-        note: "filter: sepia() shifts the composited iframe toward brown.",
-        technique: "filter: sepia(0.92)",
-        frame: { className: "cover-media fx-sepia" },
-      }),
-      embedMethod({
-        id: "invert",
-        category: treatment,
-        title: "Invert filter",
-        note: "filter: invert(1) flips the colors of the composited frame, chrome included.",
-        technique: "filter: invert(1)",
-        frame: { className: "cover-media fx-invert" },
-      }),
-      embedMethod({
-        id: "hue-rotate",
-        category: treatment,
-        title: "Hue rotate",
-        note: "filter: hue-rotate(95deg) moves the color wheel without changing the timing.",
-        technique: "filter: hue-rotate(95deg)",
-        frame: { className: "cover-media fx-hue" },
-      }),
-      embedMethod({
-        id: "high-contrast",
-        category: treatment,
-        title: "High contrast",
-        note: "filter: contrast(1.75) on the composited iframe.",
-        technique: "filter: contrast(1.75)",
-        frame: { className: "cover-media fx-contrast" },
-      }),
-      embedMethod({
-        id: "oversaturate",
-        category: treatment,
-        title: "Oversaturate",
-        note: "filter: saturate(2.8) pushes the color past the original grade.",
-        technique: "filter: saturate(2.8)",
-        frame: { className: "cover-media fx-sat" },
-      }),
-      embedMethod({
-        id: "duotone",
-        category: treatment,
-        title: "Duotone",
-        note: "A stacked filter: sepia, then hue-rotate, then saturate. It is still one CSS filter on the iframe.",
-        technique: "sepia + hue-rotate + saturate",
-        frame: { className: "cover-media fx-duo" },
-      }),
-      embedMethod({
-        id: "soft-blur",
-        category: treatment,
-        title: "Soft blur",
-        note: "filter: blur(1.5px). Light enough that motion still reads.",
-        technique: "filter: blur(1.5px)",
-        frame: { className: "cover-media fx-blur" },
-      }),
-      embedMethod({
-        id: "animated-grade",
-        category: treatment,
-        title: "Animated grade",
-        note: "A CSS animation on filter: hue-rotate. The picture cycles color while it plays.",
-        technique: "@keyframes hue-rotate",
-        frame: { className: "cover-media fx-grade" },
-      }),
-      embedMethod({
-        id: "multiply-blend",
-        category: treatment,
-        title: "Multiply blend",
-        note: "An orange layer over the iframe with mix-blend-mode: multiply. Pointer events are off so the player still receives clicks.",
-        technique: "mix-blend-mode: multiply",
-        overlay: "wash",
-      }),
-      embedMethod({
-        id: "vignette",
-        category: treatment,
-        title: "Vignette overlay",
-        note: "A radial-gradient overlay darkens the corners. It sits on top of the iframe and ignores the pointer.",
-        technique: "radial-gradient overlay",
-        overlay: "vignette",
-      }),
-      embedMethod({
-        id: "mirror",
-        category: treatment,
-        title: "Mirror",
-        note: "transform: scaleX(-1). The picture is flipped, and clicks land on the mirrored side.",
-        technique: "transform: scaleX(-1)",
-        frame: { className: "cover-media fx-mirror" },
-      }),
-      {
-        id: "perspective-tilt",
-        category: treatment,
-        title: "Perspective tilt",
-        note: "A CSS perspective scene. The iframe is rotateY and rotateX, so it sits in 3D instead of flat on the page.",
-        technique: "perspective + rotateY/rotateX",
-        mount(ctx) {
-          const scene = document.createElement("div");
-          scene.className = "tilt-scene";
-          scene.append(makeFrame(youtubeEmbed(ctx.videoId), "Perspective tilt", { className: "" }));
-          ctx.stage.append(scene);
-        },
-      },
-      embedMethod({
-        id: "ken-burns",
-        category: treatment,
-        title: "Ken Burns zoom",
-        note: "A slow scale animation on the iframe, inside a stage that hides the overflow. The name is a Ken Burns move.",
-        technique: "@keyframes scale",
-        frame: { className: "ken-media" },
-      }),
-      embedMethod({
-        id: "sideways",
-        category: treatment,
-        title: "Sideways rotate",
-        note: "The iframe is rotated 90 degrees and sized to the stage height. The picture plays on its side.",
-        technique: "transform: rotate(90deg)",
-        frame: { className: "sideways" },
       }),
       {
         id: "video-wall",
@@ -1221,7 +1049,7 @@
     Promise.resolve(pending).then(() => {
       card.dataset.mounted = "1";
       card.querySelector(".mount-state").textContent = "Mounted";
-      observer.unobserve(card);
+      try { observer.unobserve(card); } catch (error) { /* observer not ready */ }
     }).catch((error) => failMount(card, error));
   }
 
@@ -1350,4 +1178,7 @@
     node.textContent = text;
     node.classList.toggle("is-error", Boolean(isError) && Boolean(text));
   }
+
+  if (isRemote) initRemote();
+  else initDesk();
 })();

@@ -89,7 +89,7 @@
           <div>
             <p class="eyebrow">Comparison grid</p>
             <h2 id="bench-title">Waiting for a video</h2>
-            <p id="bench-sub">Each card is one way to frame the same YouTube embed. A player lazy-mounts when its card intersects the screen.</p>
+            <p id="bench-sub">Each card is one way to show the same YouTube link. A player lazy-mounts when its card intersects the screen. Start with Outside the player if embeds are blocked.</p>
           </div>
         </div>
         <div class="toolbar">
@@ -104,14 +104,15 @@
         <p class="count" id="count"></p>
         <div class="grid" id="grid"></div>
         <footer class="footnote">
-          <p>Canvas, WebGL, and WebCodecs are not in the grid. They need frames from a video element or a camera, and both are ruled out. YouTube’s own document, inside the frame, still contains their player. This page only changes the element, the embed parameters, the crop, the CSS, or the IFrame Player API.</p>
-          <p>An ad blocker can blank every YouTube frame. That is the blocker, not the method. The phone link crosses a public ntfy.sh relay tied to this session code.</p>
+          <p>Outside the player cards paint storyboard frames or WebCodecs output onto a canvas or <code>&lt;img&gt;</code>, with sound on an <code>&lt;audio&gt;</code> element. No <code>&lt;video&gt;</code> and no <code>getUserMedia</code>. Stream metadata comes from public Piped instances.</p>
+          <p>An ad blocker can blank YouTube frames. Very short videos often have no storyboard. The phone link crosses a public ntfy.sh relay tied to this session code.</p>
         </footer>
       </main>
     </div>
   </div>
 
   <script src="js/qrcode.js"></script>
+  <script src="js/alt-players.js"></script>
   <script src="js/app.js"></script>
 </body>
 </html>
